@@ -84,8 +84,9 @@ Podés usar estos comandos en cualquier momento mientras conversás con el agent
 |---|---|
 | `/cpamc connect` | Abre el asistente interactivo para cambiar la URL o la API Key. |
 | `/cpamc connect <URL> <API_KEY>` | Conexión rápida en una sola línea (útil para no pasar por el asistente). |
-| `/cpamc status` | Muestra si la conexión con el proxy está activa y cuántos modelos hay listados. |
+| `/cpamc status` (o solo `/cpamc`) | Muestra si la conexión con el proxy está activa y cuántos modelos hay listados. |
 | `/cpamc resync` | Vuelve a consultar el proxy en ese instante (ideal si agregaste cuentas nuevas a tu proxy y querés verlas ya). |
+| `/cpamc help` | Muestra la ayuda de subcomandos disponibles. |
 
 ---
 

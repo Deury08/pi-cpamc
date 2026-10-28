@@ -263,9 +263,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   // Register /cpamc management command
   pi.registerCommand("cpamc", {
-    description: "Administrar CLIProxyAPI: /cpamc [connect | status | resync]",
+    description: "Administrar CLIProxyAPI: /cpamc [connect | status | resync | help]",
     getArgumentCompletions: (prefix) => {
-      const subcommands = ["connect", "status", "resync"];
+      const subcommands = ["connect", "status", "resync", "help"];
       const filtered = subcommands.filter((s) => s.startsWith(prefix));
       return filtered.length > 0 ? filtered.map((s) => ({ value: s, label: s })) : null;
     },
@@ -301,6 +301,11 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         } else {
           ctx.ui.notify("[pi-cpamc] Falló la re-sincronización.", "error");
         }
+        return;
+      }
+
+      if (sub === "help") {
+        ctx.ui.notify("[pi-cpamc] Uso: /cpamc [connect | status | resync]", "info");
         return;
       }
 
