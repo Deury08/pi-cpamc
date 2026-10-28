@@ -1,0 +1,34 @@
+{
+  "name": "pi-cpamc",
+  "version": "1.0.0",
+  "description": "Dynamic cpamc (CLIProxyAPI) provider bridge for Pi. Auto-discovers accounts and models with zero hardcoded credentials.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "cliproxyapi",
+    "cpamc",
+    "openai-compatible"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/smoke.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
