@@ -254,9 +254,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       const count = await syncProvider(pi, config, signal);
       isRegistered = count > 0;
       return count;
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      console.warn(`[pi-cpamc] provider sync skipped: ${reason}`);
+    } catch {
+      // Falla cerrado en silencio para no ensuciar el input interactivo ni la terminal del TUI.
+      // Si el usuario quiere diagnosticar o reintentar, usa `/cpamc status` o `/connect`.
       return undefined;
     }
   };
