@@ -17,25 +17,6 @@ function loadSavedConfig() {
   return {};
 }
 
-function findKeyInPaths(filename) {
-  const candidates = [
-    join(homedir(), "Documents", "CLIProxyAPI", filename),
-    join(homedir(), ".cli-proxy-api", filename),
-    join(homedir(), ".config", "cliproxyapi", filename),
-    join(homedir(), "CLIProxyAPI", filename),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      try {
-        const content = readFileSync(candidate, "utf8").trim();
-        if (content.length > 0) return { key: content, path: candidate };
-      } catch {}
-    }
-  }
-  return null;
-}
-
 console.log("== [pi-cpamc] Smoke Test ==");
 
 const saved = loadSavedConfig();
@@ -46,77 +27,53 @@ const baseUrl = (
   "http://127.0.0.1:8317"
 ).replace(/\/+$/, "");
 
-let mgmt = null;
-if (process.env.CPAMC_MANAGEMENT_KEY) {
-  mgmt = { key: process.env.CPAMC_MANAGEMENT_KEY, path: "env:CPAMC_MANAGEMENT_KEY" };
-} else if (saved.managementKey) {
-  mgmt = { key: saved.managementKey, path: "config:cpamc.json" };
-} else {
-  mgmt = findKeyInPaths(".mgmtkey");
-}
-
-let clientKey = null;
-if (process.env.CPAMC_API_KEY || process.env.CPAMC_CLIENT_API_KEY) {
-  clientKey = { key: process.env.CPAMC_API_KEY || process.env.CPAMC_CLIENT_API_KEY, path: "env" };
-} else if (saved.clientApiKey || saved.apiKey) {
-  clientKey = { key: saved.clientApiKey || saved.apiKey, path: "config:cpamc.json" };
-} else {
-  clientKey = findKeyInPaths(".apikey");
-}
+const apiKey = process.env.CPAMC_API_KEY || saved.apiKey;
 
 console.log(`Base URL: ${baseUrl}`);
-console.log(`Management Key Source: ${mgmt ? mgmt.path : "NOT FOUND"}`);
-console.log(`Client Key Source: ${clientKey ? clientKey.path : "NOT FOUND"}`);
+console.log(`API Key Source: ${process.env.CPAMC_API_KEY ? "env:CPAMC_API_KEY" : (saved.apiKey ? "config:cpamc.json" : "NOT FOUND")}`);
 
-if (!mgmt || !clientKey) {
-  console.error("FAIL: Missing management key or client key.");
-  process.exit(1);
+if (!apiKey) {
+  console.log("Aviso: No hay API key configurada todavía. Escribí /connect dentro de Pi para configurarla.");
+  process.exit(0);
 }
 
 try {
-  const res = await fetch(`${baseUrl}/v8/management/credentials`, {
+  // 1. Health check
+  console.log("1. Comprobando Health check (GET /)...");
+  const healthRes = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(3000) });
+  if (healthRes.ok) {
+    const healthData = await healthRes.json().catch(() => ({}));
+    console.log(`   OK: Servidor reconocido: "${healthData.message || "CLI Proxy API"}"`);
+  } else {
+    console.log(`   Aviso: GET / devolvió HTTP ${healthRes.status}`);
+  }
+
+  // 2. Models discovery
+  console.log("2. Consultando modelos dinámicos (GET /v1/models)...");
+  const modelsRes = await fetch(`${baseUrl}/v1/models`, {
     headers: {
-      Authorization: `Bearer ${mgmt.key}`,
+      Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
     },
     signal: AbortSignal.timeout(5000),
   });
 
-  if (!res.ok) {
-    console.error(`FAIL: cpamc returned HTTP ${res.status}`);
+  if (!modelsRes.ok) {
+    console.error(`FAIL: GET /v1/models devolvió HTTP ${modelsRes.status}`);
     process.exit(1);
   }
 
-  const data = await res.json();
-  const accounts = (data?.files || []).filter((a) => !a.disabled && a.status === "active");
+  const modelsJson = await modelsRes.json();
+  const models = modelsJson?.data || [];
 
-  console.log(`Found ${accounts.length} active account(s) dynamically from cpamc:`);
-
-  for (const acc of accounts) {
-    const accId = acc.id;
-    const label = acc.account || acc.label || acc.name || accId;
-    const modelsRes = await fetch(
-      `${baseUrl}/v8/management/credentials/models?name=${encodeURIComponent(accId)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${mgmt.key}`,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(5000),
-      },
-    );
-
-    if (modelsRes.ok) {
-      const modelsData = await modelsRes.json();
-      const count = modelsData?.models?.length || 0;
-      console.log(` - Account [${acc.provider || "provider"}]: ${label} (${count} models)`);
-    } else {
-      console.log(` - Account [${acc.provider || "provider"}]: ${label} (error fetching models)`);
-    }
+  console.log(`   OK: Se detectaron ${models.length} modelo(s) disponibles en tiempo real:`);
+  for (const m of models) {
+    const owner = m.owned_by ? ` (proveedor: ${m.owned_by})` : "";
+    console.log(`   - ${m.id}${owner}`);
   }
 
-  console.log("\nSUCCESS: All credentials and dynamic accounts verified!");
+  console.log("\nSUCCESS: Conectado a la API sin leer archivos de disco!");
 } catch (err) {
-  console.error("FAIL: Could not connect to cpamc:", err.message);
+  console.error("FAIL: Error al conectar con cpamc:", err.message);
   process.exit(1);
 }

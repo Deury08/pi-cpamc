@@ -1,51 +1,33 @@
 /**
  * pi-cpamc: Dynamic cpamc (CLIProxyAPI) provider bridge for Pi.
  *
- * Registers one Pi provider per cpamc account so `/model` groups every account
- * with the models that account currently serves.
- *
- * ZERO hardcoded accounts or credentials:
- * - Accounts and models are fetched dynamically in real time from cpamc's Management API.
- * - Keys and endpoints are resolved in order:
- *   1. Environment variables (CPAMC_BASE_URL, CPAMC_MANAGEMENT_KEY, CPAMC_API_KEY)
- *   2. Persistent config file (~/.pi/agent/cpamc.json, managed via `/cpamc` slash command)
- *   3. Auto-discovery from local CLIProxyAPI key files (.mgmtkey / .apikey)
- *   4. Default fallback: http://127.0.0.1:8317
+ * 100% API-driven and container/OS-agnostic:
+ * - ZERO file inspection on disk: works seamlessly whether cpamc runs locally,
+ *   in Docker, in WSL, in Linux, or on a remote VPS.
+ * - ZERO hardcoded models: discovers whatever models cpamc serves dynamically
+ *   via `GET /v1/models`.
+ * - Interactive `/connect` command for one-click setup.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 interface CpamcConfig {
   baseUrl: string;
-  managementKey: string;
-  clientApiKey: string;
+  apiKey: string;
 }
 
 interface SavedConfig {
   baseUrl?: string;
-  managementKey?: string;
-  clientApiKey?: string;
   apiKey?: string;
 }
 
-interface CpamcAccount {
-  id?: string;
-  name?: string;
-  label?: string;
-  account?: string;
-  provider?: string;
-  status?: string;
-  disabled?: boolean;
-}
-
 interface CpamcModel {
-  id?: string;
-  display_name?: string;
+  id: string;
+  object?: string;
   owned_by?: string;
-  type?: string;
 }
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:8317";
@@ -57,16 +39,13 @@ const MODEL_CONTEXT_WINDOW = 200_000;
 const MODEL_MAX_TOKENS = 8192;
 
 /**
- * Returns the path to the persistent user configuration file.
+ * Path to the user's persistent configuration file (~/.pi/agent/cpamc.json).
  */
 function getConfigFilePath(): string {
   const dir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
   return join(dir, "cpamc.json");
 }
 
-/**
- * Loads saved user configuration from ~/.pi/agent/cpamc.json if present.
- */
 function loadSavedConfig(): SavedConfig {
   const filepath = getConfigFilePath();
   if (existsSync(filepath)) {
@@ -80,49 +59,16 @@ function loadSavedConfig(): SavedConfig {
   return {};
 }
 
-/**
- * Persists updated configuration fields to ~/.pi/agent/cpamc.json.
- */
-function saveConfigPatch(patch: SavedConfig): void {
+function saveConfig(config: SavedConfig): void {
   const filepath = getConfigFilePath();
   const current = loadSavedConfig();
-  const updated = { ...current, ...patch };
+  const updated = { ...current, ...config };
   mkdirSync(dirname(filepath), { recursive: true });
   writeFileSync(filepath, JSON.stringify(updated, null, 2), "utf8");
 }
 
 /**
- * Searches candidate file paths for a key file (.mgmtkey or .apikey)
- * and returns the trimmed content of the first existing file.
- */
-function findKeyInPaths(filename: string): string | undefined {
-  const candidates = [
-    join(homedir(), "Documents", "CLIProxyAPI", filename),
-    join(homedir(), ".cli-proxy-api", filename),
-    join(homedir(), ".config", "cliproxyapi", filename),
-    join(homedir(), "CLIProxyAPI", filename),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      try {
-        const content = readFileSync(candidate, "utf8").trim();
-        if (content.length > 0) return content;
-      } catch {
-        // Continue searching next candidate
-      }
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Resolves configuration with clear priority:
- * 1. Environment variables
- * 2. Saved user config file (cpamc.json)
- * 3. Local key files (.mgmtkey / .apikey)
- * 4. Default localhost URL
+ * Resolves active configuration from environment variables or saved cpamc.json.
  */
 function resolveConfig(): CpamcConfig | undefined {
   const saved = loadSavedConfig();
@@ -133,72 +79,65 @@ function resolveConfig(): CpamcConfig | undefined {
     DEFAULT_BASE_URL
   ).replace(/\/+$/, "");
 
-  const managementKey =
-    process.env.CPAMC_MANAGEMENT_KEY ||
-    saved.managementKey ||
-    findKeyInPaths(".mgmtkey");
+  const apiKey = process.env.CPAMC_API_KEY || saved.apiKey;
 
-  const clientApiKey =
-    process.env.CPAMC_API_KEY ||
-    process.env.CPAMC_CLIENT_API_KEY ||
-    saved.clientApiKey ||
-    saved.apiKey ||
-    findKeyInPaths(".apikey");
-
-  if (!managementKey) {
-    console.warn(
-      "[pi-cpamc] No management key found. Set CPAMC_MANAGEMENT_KEY, run '/cpamc keys ...', or ensure .mgmtkey exists.",
-    );
+  if (!apiKey) {
     return undefined;
   }
 
-  if (!clientApiKey) {
-    console.warn(
-      "[pi-cpamc] No client API key found. Set CPAMC_API_KEY, run '/cpamc keys ...', or ensure .apikey exists.",
-    );
-    return undefined;
-  }
-
-  return { baseUrl, managementKey, clientApiKey };
+  return { baseUrl, apiKey };
 }
 
-async function fetchJson(
-  url: string,
-  managementKey: string,
+/**
+ * Checks server health via GET / (which returns {"message":"CLI Proxy API Server",...}).
+ */
+async function checkHealth(baseUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return false;
+    const body = await res.json().catch(() => null);
+    return Boolean(body && (body.message?.includes("CLI Proxy") || Array.isArray(body.endpoints)));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetches dynamic list of available models from cpamc via GET /v1/models.
+ */
+async function fetchModels(
+  baseUrl: string,
+  apiKey: string,
   signal?: AbortSignal,
-): Promise<unknown> {
-  const response = await fetch(url, {
+): Promise<CpamcModel[]> {
+  const res = await fetch(`${baseUrl}/v1/models`, {
     headers: {
-      Authorization: `Bearer ${managementKey}`,
+      Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
     },
     signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
-  if (!response.ok) {
-    throw new Error(`cpamc ${url} returned HTTP ${response.status}`);
+  if (!res.ok) {
+    throw new Error(`cpamc GET /v1/models returned HTTP ${res.status}`);
   }
 
-  return response.json();
+  const json = (await res.json()) as { data?: CpamcModel[] };
+  return json?.data ?? [];
 }
 
-function accountLabel(account: CpamcAccount): string {
-  return account.account ?? account.label ?? account.name ?? account.id ?? "unknown";
-}
+function toModelDefinition(model: CpamcModel) {
+  const id = model.id;
+  const ownerSuffix = model.owned_by ? ` [${model.owned_by}]` : "";
+  const isThinking = id.includes("thinking") || id.includes("reason");
 
-function isUsable(account: CpamcAccount): boolean {
-  if (account.disabled === true) return false;
-  if (account.status && account.status !== "active") return false;
-  return Boolean(account.id);
-}
-
-function toModelDefinition(model: CpamcModel, index: number) {
-  const id = model.id ?? `cpamc-model-${index}`;
   return {
     type: "chat" as const,
     id,
-    name: model.display_name ?? id,
-    reasoning: false,
+    name: `${id}${ownerSuffix}`,
+    reasoning: isThinking,
     input: ["text" as const],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: MODEL_CONTEXT_WINDOW,
@@ -206,81 +145,115 @@ function toModelDefinition(model: CpamcModel, index: number) {
   };
 }
 
-async function fetchAccountModels(
-  baseUrl: string,
-  managementKey: string,
-  accountId: string,
+/**
+ * Synchronizes available models from cpamc and registers the provider in Pi.
+ */
+async function syncProvider(
+  pi: ExtensionAPI,
+  config: CpamcConfig,
   signal?: AbortSignal,
-): Promise<CpamcModel[]> {
-  const catalog = (await fetchJson(
-    `${baseUrl}/v8/management/credentials/models?name=${encodeURIComponent(accountId)}`,
-    managementKey,
-    signal,
-  )) as { models?: CpamcModel[] };
+): Promise<number> {
+  const models = await fetchModels(config.baseUrl, config.apiKey, signal);
+  if (models.length === 0) {
+    pi.unregisterProvider("cpamc");
+    return 0;
+  }
 
-  return catalog?.models ?? [];
+  pi.registerProvider("cpamc", {
+    name: "CLIProxyAPI (cpamc)",
+    baseUrl: `${config.baseUrl}/v1`,
+    apiKey: config.apiKey,
+    api: CPAMC_API,
+    models: models.map(toModelDefinition),
+    refreshModels: async (context: { signal?: AbortSignal }) => {
+      const fresh = await fetchModels(config.baseUrl, config.apiKey, context?.signal);
+      return fresh.map(toModelDefinition);
+    },
+  });
+
+  return models.length;
 }
 
 /**
- * Reconciles Pi's registered providers with cpamc's live account inventory.
+ * Interactive wizard launched by `/connect`.
  */
-async function syncAccounts(
+async function runInteractiveConnect(
+  ctx: ExtensionContext,
   pi: ExtensionAPI,
-  config: CpamcConfig,
-  registeredAccountIds: Set<string>,
-  signal?: AbortSignal,
-): Promise<number> {
-  const credentials = (await fetchJson(
-    `${config.baseUrl}/v8/management/credentials`,
-    config.managementKey,
-    signal,
-  )) as { files?: CpamcAccount[] };
-
-  const accounts = (credentials?.files ?? []).filter(isUsable);
-  const liveAccountIds = new Set<string>();
-  let registered = 0;
-
-  for (const account of accounts) {
-    const accountId = account.id as string;
-    const models = await fetchAccountModels(config.baseUrl, config.managementKey, accountId, signal);
-    if (models.length === 0) continue;
-
-    liveAccountIds.add(accountId);
-
-    pi.registerProvider(`cpamc/${accountId}`, {
-      name: `cpamc — ${accountLabel(account)} (${account.provider ?? "unknown"})`,
-      baseUrl: `${config.baseUrl}/v1`,
-      apiKey: config.clientApiKey,
-      api: CPAMC_API,
-      models: models.map(toModelDefinition),
-      refreshModels: async (context: { signal?: AbortSignal }) => {
-        const fresh = await fetchAccountModels(config.baseUrl, config.managementKey, accountId, context?.signal);
-        return fresh.map(toModelDefinition);
-      },
-    });
-
-    registeredAccountIds.add(accountId);
-    registered++;
+): Promise<void> {
+  if (!ctx.ui?.input) {
+    ctx.ui?.notify("El comando /connect requiere interfaz interactiva.", "warning");
+    return;
   }
 
-  // Remove providers for accounts that disappeared from cpamc
-  for (const accountId of [...registeredAccountIds]) {
-    if (liveAccountIds.has(accountId)) continue;
-    pi.unregisterProvider(`cpamc/${accountId}`);
-    registeredAccountIds.delete(accountId);
+  const saved = loadSavedConfig();
+  const currentUrl = saved.baseUrl || DEFAULT_BASE_URL;
+
+  // Step 1: Server URL
+  const inputUrl = await ctx.ui.input(
+    "URL de CLIProxyAPI (presioná Enter para localhost o escribí tu VPS/Docker):",
+    currentUrl,
+  );
+
+  if (inputUrl === undefined) {
+    ctx.ui.notify("Conexión cancelada.", "info");
+    return;
   }
 
-  return registered;
+  const targetUrl = (inputUrl.trim() || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    ctx.ui.notify("La URL debe comenzar con http:// o https://", "error");
+    return;
+  }
+
+  // Step 2: Health check
+  ctx.ui.notify(`Verificando conexión con ${targetUrl}...`, "info");
+  const isAlive = await checkHealth(targetUrl);
+  if (!isAlive) {
+    ctx.ui.notify(`Aviso: ${targetUrl} no respondió al ping de saludo. Verificá que el proxy esté corriendo.`, "warning");
+  }
+
+  // Step 3: API Key
+  const inputKey = await ctx.ui.input(
+    "API Key de cpamc (sk-...):",
+    saved.apiKey || "",
+  );
+
+  if (!inputKey || !inputKey.trim()) {
+    ctx.ui.notify("Conexión cancelada: la API Key es obligatoria.", "warning");
+    return;
+  }
+
+  const apiKey = inputKey.trim();
+
+  // Step 4: Validate against /v1/models and save
+  try {
+    ctx.ui.notify("Consultando modelos disponibles en la API...", "info");
+    const count = await syncProvider(pi, { baseUrl: targetUrl, apiKey });
+    saveConfig({ baseUrl: targetUrl, apiKey });
+
+    ctx.ui.notify(
+      `[pi-cpamc] ¡Conectado con éxito! Se detectaron ${count} modelos disponibles listos para usar en /model.`,
+      "info",
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    ctx.ui.notify(`[pi-cpamc] Error al conectar: ${msg}`, "error");
+  }
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
-  const registeredAccountIds = new Set<string>();
+  let isRegistered = false;
 
   const runSync = async (signal?: AbortSignal): Promise<number | undefined> => {
     try {
       const config = resolveConfig();
-      if (!config) return undefined;
-      return await syncAccounts(pi, config, registeredAccountIds, signal);
+      if (!config) {
+        return undefined;
+      }
+      const count = await syncProvider(pi, config, signal);
+      isRegistered = count > 0;
+      return count;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[pi-cpamc] provider sync skipped: ${reason}`);
@@ -288,82 +261,74 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
   };
 
-  // Register interactive /cpamc command for runtime status and remote VPS configuration
+  // Register /connect interactive command (OpenCode style)
+  pi.registerCommand("connect", {
+    description: "Conectar interactivamente a CLIProxyAPI (local, Docker o VPS)",
+    handler: async (args, ctx) => {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+
+      // Fast non-interactive invocation: /connect <url> <apiKey>
+      if (parts.length >= 2) {
+        const url = parts[0].replace(/\/+$/, "");
+        const key = parts[1];
+        try {
+          const count = await syncProvider(pi, { baseUrl: url, apiKey: key });
+          saveConfig({ baseUrl: url, apiKey: key });
+          ctx.ui.notify(`[pi-cpamc] Conectado a ${url}. ${count} modelos disponibles.`, "info");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          ctx.ui.notify(`[pi-cpamc] Error de conexión: ${msg}`, "error");
+        }
+        return;
+      }
+
+      await runInteractiveConnect(ctx, pi);
+    },
+  });
+
+  // Register /cpamc management command
   pi.registerCommand("cpamc", {
-    description: "Manage CLIProxyAPI (cpamc) bridge: /cpamc status | url <url> | keys <mgmt> <api> | resync",
+    description: "Administrar CLIProxyAPI: /cpamc [connect | status | resync]",
     getArgumentCompletions: (prefix) => {
-      const subcommands = ["status", "url", "keys", "resync"];
+      const subcommands = ["connect", "status", "resync"];
       const filtered = subcommands.filter((s) => s.startsWith(prefix));
       return filtered.length > 0 ? filtered.map((s) => ({ value: s, label: s })) : null;
     },
     handler: async (args, ctx) => {
-      const parts = args.trim().split(/\s+/).filter(Boolean);
-      const sub = (parts[0] || "status").toLowerCase();
+      const sub = (args.trim().split(/\s+/)[0] || "status").toLowerCase();
 
-      if (sub === "status") {
-        const config = resolveConfig();
-        const saved = loadSavedConfig();
-        const baseUrl = config?.baseUrl || saved.baseUrl || DEFAULT_BASE_URL;
-        const count = registeredAccountIds.size;
-        ctx.ui.notify(
-          `[pi-cpamc] URL: ${baseUrl} | Cuentas activas: ${count} | Keys: ${config ? "OK" : "Faltan credenciales"}`,
-          config ? "info" : "warning",
-        );
-        return;
-      }
-
-      if (sub === "url") {
-        const newUrl = parts[1];
-        if (!newUrl || !/^https?:\/\//i.test(newUrl)) {
-          ctx.ui.notify("Uso: /cpamc url <http://host:puerto o https://vps.com:puerto>", "error");
-          return;
-        }
-        const cleaned = newUrl.replace(/\/+$/, "");
-        saveConfigPatch({ baseUrl: cleaned });
-        const registered = await runSync();
-        if (registered !== undefined) {
-          ctx.ui.notify(`[pi-cpamc] URL actualizada a ${cleaned}. Sincronizadas ${registered} cuenta(s).`, "info");
-        } else {
-          ctx.ui.notify(`[pi-cpamc] URL guardada (${cleaned}), pero falló la conexión con cpamc.`, "warning");
-        }
-        return;
-      }
-
-      if (sub === "keys") {
-        const mgmtKey = parts[1];
-        const apiKey = parts[2];
-        if (!mgmtKey || !apiKey) {
-          ctx.ui.notify("Uso: /cpamc keys <managementKey> <apiKey>", "error");
-          return;
-        }
-        saveConfigPatch({ managementKey: mgmtKey, clientApiKey: apiKey });
-        const registered = await runSync();
-        if (registered !== undefined) {
-          ctx.ui.notify(`[pi-cpamc] Keys guardadas. Sincronizadas ${registered} cuenta(s).`, "info");
-        } else {
-          ctx.ui.notify("[pi-cpamc] Keys guardadas, pero falló la conexión con cpamc.", "warning");
-        }
+      if (sub === "connect") {
+        await runInteractiveConnect(ctx, pi);
         return;
       }
 
       if (sub === "resync") {
-        const registered = await runSync();
-        if (registered !== undefined) {
-          ctx.ui.notify(`[pi-cpamc] Re-sincronización exitosa: ${registered} cuenta(s) activas.`, "info");
+        const count = await runSync();
+        if (count !== undefined) {
+          ctx.ui.notify(`[pi-cpamc] Re-sincronización exitosa: ${count} modelos disponibles.`, "info");
         } else {
           ctx.ui.notify("[pi-cpamc] Falló la re-sincronización.", "error");
         }
         return;
       }
 
-      ctx.ui.notify("Subcomandos: /cpamc status | url <url> | keys <mgmt> <api> | resync", "warning");
+      // Default: status
+      const config = resolveConfig();
+      if (!config) {
+        ctx.ui.notify("[pi-cpamc] No configurado aún. Escribí /connect para conectarte.", "warning");
+        return;
+      }
+      ctx.ui.notify(
+        `[pi-cpamc] URL: ${config.baseUrl} | Estado: ${isRegistered ? "Conectado" : "Esperando sync"} | Usá /model para elegir modelos`,
+        "info",
+      );
     },
   });
 
   // Initial sync before completing startup
   await runSync(AbortSignal.timeout(REQUEST_TIMEOUT_MS));
 
-  // Background recovery and dynamic account change polling
+  // Background recovery and dynamic catalog refresh
   const timer = setInterval(() => {
     void runSync();
   }, RESYNC_INTERVAL_MS);

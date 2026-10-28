@@ -1,15 +1,15 @@
 # pi-cpamc
 
-Puente dinámico de proveedores de [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (cpamc) para **Pi**.
+Puente dinámico de proveedores de [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (cpamc) para **Pi** y **Gentle Shell**.
 
-Registra dinámicamente un proveedor por cada cuenta activa de cpamc en Pi (`cpamc/<cuenta>`), agrupando en `/model` únicamente los modelos que esa cuenta sirve realmente.
+Conecta Pi directamente a la API HTTP de cpamc para descubrir en tiempo real todos los modelos disponibles en tu servidor, sin importar si corre localmente, en Docker, en Linux, en WSL o en un VPS remoto.
 
 ## Características
 
-- **Cero cuentas ni modelos hardcodeados**: Consulta en tiempo real las credenciales y modelos disponibles vía la API de cpamc (`/v8/management/credentials`).
-- **Cero secretos en el repositorio**: Las credenciales no se escriben en el código ni se commitean. Se leen de variables de entorno o se auto-descubren de los archivos locales `.mgmtkey` y `.apikey`.
-- **Catálogo en vivo**: Soporta `refreshModels` para que cada vez que consultes `/model` en Pi se refresquen los modelos sin necesidad de reiniciar la sesión.
-- **Sincronización en segundo plano**: Un temporizador cada 60s detecta cuentas agregadas o removidas en cpamc sin interrumpir la sesión de Pi.
+- **100% basado en API (Agnóstico del Sistema)**: Cero lectura de archivos en disco. Funciona de forma transparente si cpamc corre en Docker, WSL, Linux o VPS.
+- **Cero modelos hardcodeados**: Descubre dinámicamente cualquier modelo disponible consultando `GET /v1/models`. Si agregás o quitás cuentas/modelos en cpamc, se reflejan automáticamente.
+- **Asistente interactivo `/connect`**: Al estilo OpenCode, configurás la URL y la API key en un diálogo paso a paso dentro del TUI.
+- **Catálogo en vivo**: Soporta `refreshModels` para que cada vez que abras `/model` se consulte la lista actualizada de modelos en caliente.
 
 ## Instalación
 
@@ -62,60 +62,45 @@ gentle-shell list
 
 ---
 
-> **Tip (dentro del TUI / chat interactivo):**  
-> Tanto en Pi como en Gentle Shell podés escribir directamente el comando interactivo:  
-> `/install git:github.com/Deury08/pi-cpamc` (o `/install .` si estás en el repo local).
+## Configuración con `/connect` (Recomendado)
 
-## Configuración
-
-La extensión funciona tanto en local como conectada a un **servidor remoto o VPS**. El orden de resolución es:
-
-1. **Variables de entorno** (máxima prioridad)
-2. **Archivo de configuración persistente** (`~/.pi/agent/cpamc.json`, configurable con el comando `/cpamc`)
-3. **Auto-descubrimiento local** (archivos `.mgmtkey` y `.apikey` en `Documents/CLIProxyAPI/` o `~/.cli-proxy-api/`)
-4. **Default local**: `http://127.0.0.1:8317`
-
-### Opción A: Desde el chat interactivo (TUI) con `/cpamc`
-
-Si tenés cpamc corriendo en otra PC o VPS, podés configurarlo en vivo desde Pi o Gentle Shell:
+Una vez instalada la extensión, abrís Pi o Gentle Shell y escribís:
 
 ```text
-# Configurar la URL de tu VPS o servidor remoto:
-/cpamc url http://tu-vps-o-ip:8317
-
-# Configurar las llaves si el servidor está en otra máquina:
-/cpamc keys mgmt-tu-management-key sk-tu-client-api-key
-
-# Ver el estado actual y cuentas activas:
-/cpamc status
-
-# Forzar una re-sincronización manual:
-/cpamc resync
+/connect
 ```
 
-### Opción B: Mediante archivo de configuración (`cpamc.json`)
+El asistente te guiará paso a paso:
+1. **URL de cpamc**: Presioná Enter para usar el default (`http://127.0.0.1:8317`) o ingresá la URL de tu contenedor Docker / VPS (ej. `http://localhost:9000` o `https://mi-vps.com:8317`).
+2. **Health check**: Verifica automáticamente la salud del servidor (`GET /`).
+3. **API Key**: Pegás tu clave de cliente (`sk-...`).
+4. **Validación y conexión**: Consulta `GET /v1/models`, registra el proveedor `cpamc` con todos los modelos disponibles y guarda la configuración en `~/.pi/agent/cpamc.json`.
 
-Podés crear o editar directamente `~/.pi/agent/cpamc.json`:
+### Comandos disponibles
 
-```json
-{
-  "baseUrl": "http://tu-vps:8317",
-  "managementKey": "mgmt-...",
-  "apiKey": "sk-..."
-}
-```
+| Comando | Descripción |
+|---|---|
+| `/connect` | Abre el asistente interactivo para conectar URL y API Key |
+| `/connect <url> <apiKey>` | Conexión directa en una sola línea (ideal para scripts) |
+| `/cpamc status` | Muestra la URL actual y estado de la conexión |
+| `/cpamc resync` | Fuerza la re-sincronización inmediata de modelos con cpamc |
 
-### Opción C: Variables de entorno (ideal para Docker / CI / VPS)
+---
+
+## Configuración alternativa (Variables de entorno)
+
+Ideal para entornos automatizados, Docker o CI/CD:
 
 | Variable | Descripción | Valor por defecto |
 |---|---|---|
 | `CPAMC_BASE_URL` | URL base del servidor CLIProxyAPI | `http://127.0.0.1:8317` |
-| `CPAMC_MANAGEMENT_KEY` | Clave de gestión (`mgmt-...`) | Auto-descubierta de `.mgmtkey` |
-| `CPAMC_API_KEY` | Clave cliente para inferencia (`sk-...`) | Auto-descubierta de `.apikey` |
+| `CPAMC_API_KEY` | Clave cliente para inferencia y modelos (`sk-...`) | Leída de `cpamc.json` |
+
+---
 
 ## Verificación
 
-Para probar la conectividad y ver las cuentas detectadas en vivo:
+Para probar la conexión y listar los modelos disponibles en tu terminal:
 
 ```bash
 node test/smoke.mjs
