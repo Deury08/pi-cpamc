@@ -13,17 +13,50 @@ Registra dinámicamente un proveedor por cada cuenta activa de cpamc en Pi (`cpa
 
 ## Instalación
 
-En Pi:
+Elegí la variante según el entorno que estés usando:
 
+### Variante 1: Pi (CLI estándar)
+
+**Desde carpeta local:**
 ```bash
 pi install C:/Users/Polanco/pi-cpamc
 ```
 
-O si está publicado en un repositorio Git:
-
+**O desde repositorio Git (remoto):**
 ```bash
 pi install git:github.com/tu-usuario/pi-cpamc
 ```
+
+**Verificar instalación:**
+```bash
+pi list
+pi --list-models
+```
+
+---
+
+### Variante 2: Gentle Shell
+
+**Desde carpeta local:**
+```bash
+gentle-shell install C:/Users/Polanco/pi-cpamc
+```
+
+**O desde repositorio Git (remoto):**
+```bash
+gentle-shell install git:github.com/tu-usuario/pi-cpamc
+```
+
+**Verificar instalación:**
+```bash
+gentle-shell list
+```
+
+---
+
+> **Tip (dentro del TUI / chat interactivo):**  
+> Tanto en Pi como en Gentle Shell podés escribir directamente el comando interactivo:  
+> `/install C:/Users/Polanco/pi-cpamc`
 
 ## Configuración
 
