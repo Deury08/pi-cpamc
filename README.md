@@ -24,7 +24,7 @@ pi install C:/Users/Polanco/pi-cpamc
 
 **O desde repositorio Git (remoto):**
 ```bash
-pi install git:github.com/tu-usuario/pi-cpamc
+pi install git:github.com/Deury08/pi-cpamc
 ```
 
 **Verificar instalación:**
@@ -44,7 +44,7 @@ gentle-shell install C:/Users/Polanco/pi-cpamc
 
 **O desde repositorio Git (remoto):**
 ```bash
-gentle-shell install git:github.com/tu-usuario/pi-cpamc
+gentle-shell install git:github.com/Deury08/pi-cpamc
 ```
 
 **Verificar instalación:**
