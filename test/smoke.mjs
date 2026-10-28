@@ -2,6 +2,21 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+function getConfigFilePath() {
+  const dir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+  return join(dir, "cpamc.json");
+}
+
+function loadSavedConfig() {
+  const filepath = getConfigFilePath();
+  if (existsSync(filepath)) {
+    try {
+      return JSON.parse(readFileSync(filepath, "utf8"));
+    } catch {}
+  }
+  return {};
+}
+
 function findKeyInPaths(filename) {
   const candidates = [
     join(homedir(), "Documents", "CLIProxyAPI", filename),
@@ -23,15 +38,31 @@ function findKeyInPaths(filename) {
 
 console.log("== [pi-cpamc] Smoke Test ==");
 
-const mgmt = process.env.CPAMC_MANAGEMENT_KEY
-  ? { key: process.env.CPAMC_MANAGEMENT_KEY, path: "env:CPAMC_MANAGEMENT_KEY" }
-  : findKeyInPaths(".mgmtkey");
+const saved = loadSavedConfig();
 
-const clientKey = (process.env.CPAMC_API_KEY || process.env.CPAMC_CLIENT_API_KEY)
-  ? { key: process.env.CPAMC_API_KEY || process.env.CPAMC_CLIENT_API_KEY, path: "env" }
-  : findKeyInPaths(".apikey");
+const baseUrl = (
+  process.env.CPAMC_BASE_URL ||
+  saved.baseUrl ||
+  "http://127.0.0.1:8317"
+).replace(/\/+$/, "");
 
-const baseUrl = (process.env.CPAMC_BASE_URL || "http://127.0.0.1:8317").replace(/\/+$/, "");
+let mgmt = null;
+if (process.env.CPAMC_MANAGEMENT_KEY) {
+  mgmt = { key: process.env.CPAMC_MANAGEMENT_KEY, path: "env:CPAMC_MANAGEMENT_KEY" };
+} else if (saved.managementKey) {
+  mgmt = { key: saved.managementKey, path: "config:cpamc.json" };
+} else {
+  mgmt = findKeyInPaths(".mgmtkey");
+}
+
+let clientKey = null;
+if (process.env.CPAMC_API_KEY || process.env.CPAMC_CLIENT_API_KEY) {
+  clientKey = { key: process.env.CPAMC_API_KEY || process.env.CPAMC_CLIENT_API_KEY, path: "env" };
+} else if (saved.clientApiKey || saved.apiKey) {
+  clientKey = { key: saved.clientApiKey || saved.apiKey, path: "config:cpamc.json" };
+} else {
+  clientKey = findKeyInPaths(".apikey");
+}
 
 console.log(`Base URL: ${baseUrl}`);
 console.log(`Management Key Source: ${mgmt ? mgmt.path : "NOT FOUND"}`);

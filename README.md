@@ -68,9 +68,44 @@ gentle-shell list
 
 ## Configuración
 
-Por defecto, la extensión busca automáticamente los archivos `.mgmtkey` y `.apikey` generados por CLIProxyAPI en sus rutas estándar (`Documents/CLIProxyAPI/`, `~/.cli-proxy-api/`, etc.).
+La extensión funciona tanto en local como conectada a un **servidor remoto o VPS**. El orden de resolución es:
 
-Si querés forzar valores específicos o correrlo en otra máquina/puerto, podés configurar las variables de entorno:
+1. **Variables de entorno** (máxima prioridad)
+2. **Archivo de configuración persistente** (`~/.pi/agent/cpamc.json`, configurable con el comando `/cpamc`)
+3. **Auto-descubrimiento local** (archivos `.mgmtkey` y `.apikey` en `Documents/CLIProxyAPI/` o `~/.cli-proxy-api/`)
+4. **Default local**: `http://127.0.0.1:8317`
+
+### Opción A: Desde el chat interactivo (TUI) con `/cpamc`
+
+Si tenés cpamc corriendo en otra PC o VPS, podés configurarlo en vivo desde Pi o Gentle Shell:
+
+```text
+# Configurar la URL de tu VPS o servidor remoto:
+/cpamc url http://tu-vps-o-ip:8317
+
+# Configurar las llaves si el servidor está en otra máquina:
+/cpamc keys mgmt-tu-management-key sk-tu-client-api-key
+
+# Ver el estado actual y cuentas activas:
+/cpamc status
+
+# Forzar una re-sincronización manual:
+/cpamc resync
+```
+
+### Opción B: Mediante archivo de configuración (`cpamc.json`)
+
+Podés crear o editar directamente `~/.pi/agent/cpamc.json`:
+
+```json
+{
+  "baseUrl": "http://tu-vps:8317",
+  "managementKey": "mgmt-...",
+  "apiKey": "sk-..."
+}
+```
+
+### Opción C: Variables de entorno (ideal para Docker / CI / VPS)
 
 | Variable | Descripción | Valor por defecto |
 |---|---|---|
