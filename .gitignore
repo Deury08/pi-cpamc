@@ -1,7 +1,35 @@
+# Dependencies
 node_modules/
+
+# Production / Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Local configuration and credentials
+cpamc.json
+*.local
+*.key
 .env
 .env.*
-*.key
+
+# CodeGraph & Agent indexing artifacts
+.codegraph/
+.atl/
+.pi/
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor & OS artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
+desktop.ini
