@@ -17,14 +17,18 @@ Elegí la variante según el entorno que estés usando:
 
 ### Variante 1: Pi (CLI estándar)
 
-**Desde carpeta local:**
-```bash
-pi install C:/Users/Polanco/pi-cpamc
-```
-
-**O desde repositorio Git (remoto):**
+**Instalación directa desde GitHub (recomendada):**
 ```bash
 pi install git:github.com/Deury08/pi-cpamc
+```
+
+**O si clonaste el repositorio localmente:**
+```bash
+# Estando dentro de la carpeta del repo clonado:
+pi install .
+
+# O pasando la ruta relativa/absoluta:
+pi install ./pi-cpamc
 ```
 
 **Verificar instalación:**
@@ -37,14 +41,18 @@ pi --list-models
 
 ### Variante 2: Gentle Shell
 
-**Desde carpeta local:**
-```bash
-gentle-shell install C:/Users/Polanco/pi-cpamc
-```
-
-**O desde repositorio Git (remoto):**
+**Instalación directa desde GitHub (recomendada):**
 ```bash
 gentle-shell install git:github.com/Deury08/pi-cpamc
+```
+
+**O si clonaste el repositorio localmente:**
+```bash
+# Estando dentro de la carpeta del repo clonado:
+gentle-shell install .
+
+# O pasando la ruta relativa/absoluta:
+gentle-shell install ./pi-cpamc
 ```
 
 **Verificar instalación:**
@@ -56,7 +64,7 @@ gentle-shell list
 
 > **Tip (dentro del TUI / chat interactivo):**  
 > Tanto en Pi como en Gentle Shell podés escribir directamente el comando interactivo:  
-> `/install C:/Users/Polanco/pi-cpamc`
+> `/install git:github.com/Deury08/pi-cpamc` (o `/install .` si estás en el repo local).
 
 ## Configuración
 
