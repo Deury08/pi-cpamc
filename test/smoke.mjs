@@ -33,7 +33,7 @@ console.log(`Base URL: ${baseUrl}`);
 console.log(`API Key Source: ${process.env.CPAMC_API_KEY ? "env:CPAMC_API_KEY" : (saved.apiKey ? "config:cpamc.json" : "NOT FOUND")}`);
 
 if (!apiKey) {
-  console.log("Aviso: No hay API key configurada todavía. Escribí /connect dentro de Pi para configurarla.");
+  console.log("Aviso: No hay API key configurada todavía. Escribí /cpamc connect dentro de Pi para configurarla.");
   process.exit(0);
 }
 

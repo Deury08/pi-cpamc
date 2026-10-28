@@ -47,12 +47,12 @@ gentle-shell install git:github.com/Deury08/pi-cpamc
 
 ---
 
-### Paso 2: Conectar con tu servidor (`/connect`)
+### Paso 2: Conectar con tu servidor (`/cpamc connect`)
 
 Abrí tu sesión de Pi o Gentle Shell y escribí en la barra de mensajes:
 
 ```text
-/connect
+/cpamc connect
 ```
 
 Se abrirá un asistente paso a paso en tu pantalla:
@@ -82,8 +82,8 @@ Podés usar estos comandos en cualquier momento mientras conversás con el agent
 
 | Comando | ¿Para qué sirve? |
 |---|---|
-| `/connect` | Abre el asistente interactivo para cambiar la URL o la API Key. |
-| `/connect <URL> <API_KEY>` | Conexión rápida en una sola línea (útil para no pasar por el asistente). |
+| `/cpamc connect` | Abre el asistente interactivo para cambiar la URL o la API Key. |
+| `/cpamc connect <URL> <API_KEY>` | Conexión rápida en una sola línea (útil para no pasar por el asistente). |
 | `/cpamc status` | Muestra si la conexión con el proxy está activa y cuántos modelos hay listados. |
 | `/cpamc resync` | Vuelve a consultar el proxy en ese instante (ideal si agregaste cuentas nuevas a tu proxy y querés verlas ya). |
 
@@ -95,7 +95,7 @@ Podés usar estos comandos en cualquier momento mientras conversás con el agent
 La extensión está diseñada para **no interferir en tu trabajo**. Si el proxy no responde, la extensión falla en silencio en segundo plano: no bloquea el arranque de Pi ni ensucia la pantalla con advertencias. Cuando vuelvas a encender tu proxy, el catálogo se sincronizará automáticamente.
 
 ### ¿Cómo lo uso si cpamc corre en Docker o en otra PC/VPS?
-Solo tenés que ejecutar `/connect` y poner la dirección IP o dominio accesible desde tu máquina, por ejemplo:
+Solo tenés que ejecutar `/cpamc connect` y poner la dirección IP o dominio accesible desde tu máquina, por ejemplo:
 - Docker local: `http://localhost:8317` o el puerto que hayas mapeado.
 - Otra PC en tu red local: `http://192.168.1.50:8317`
 - Servidor remoto: `https://tu-servidor.com:8317`

@@ -6,7 +6,7 @@
  *   in Docker, in WSL, in Linux, or on a remote VPS.
  * - ZERO hardcoded models: discovers whatever models cpamc serves dynamically
  *   via `GET /v1/models`.
- * - Interactive `/connect` command for one-click setup.
+ * - Interactive `/cpamc connect` command for one-click setup.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -175,14 +175,14 @@ async function syncProvider(
 }
 
 /**
- * Interactive wizard launched by `/connect`.
+ * Interactive wizard launched by `/cpamc connect`.
  */
 async function runInteractiveConnect(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
 ): Promise<void> {
   if (!ctx.ui?.input) {
-    ctx.ui?.notify("El comando /connect requiere interfaz interactiva.", "warning");
+    ctx.ui?.notify("El comando /cpamc connect requiere interfaz interactiva.", "warning");
     return;
   }
 
@@ -256,35 +256,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       return count;
     } catch {
       // Falla cerrado en silencio para no ensuciar el input interactivo ni la terminal del TUI.
-      // Si el usuario quiere diagnosticar o reintentar, usa `/cpamc status` o `/connect`.
+      // Si el usuario quiere diagnosticar o reintentar, usa `/cpamc status` o `/cpamc connect`.
       return undefined;
     }
   };
-
-  // Register /connect interactive command (OpenCode style)
-  pi.registerCommand("connect", {
-    description: "Conectar interactivamente a CLIProxyAPI (local, Docker o VPS)",
-    handler: async (args, ctx) => {
-      const parts = args.trim().split(/\s+/).filter(Boolean);
-
-      // Fast non-interactive invocation: /connect <url> <apiKey>
-      if (parts.length >= 2) {
-        const url = parts[0].replace(/\/+$/, "");
-        const key = parts[1];
-        try {
-          const count = await syncProvider(pi, { baseUrl: url, apiKey: key });
-          saveConfig({ baseUrl: url, apiKey: key });
-          ctx.ui.notify(`[pi-cpamc] Conectado a ${url}. ${count} modelos disponibles.`, "info");
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          ctx.ui.notify(`[pi-cpamc] Error de conexión: ${msg}`, "error");
-        }
-        return;
-      }
-
-      await runInteractiveConnect(ctx, pi);
-    },
-  });
 
   // Register /cpamc management command
   pi.registerCommand("cpamc", {
@@ -298,6 +273,23 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       const sub = (args.trim().split(/\s+/)[0] || "status").toLowerCase();
 
       if (sub === "connect") {
+        const parts = args.trim().split(/\s+/).filter(Boolean).slice(1);
+
+        // Fast non-interactive invocation: /cpamc connect <url> <apiKey>
+        if (parts.length >= 2) {
+          const url = parts[0].replace(/\/+$/, "");
+          const key = parts[1];
+          try {
+            const count = await syncProvider(pi, { baseUrl: url, apiKey: key });
+            saveConfig({ baseUrl: url, apiKey: key });
+            ctx.ui.notify(`[pi-cpamc] Conectado a ${url}. ${count} modelos disponibles.`, "info");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.ui.notify(`[pi-cpamc] Error de conexión: ${msg}`, "error");
+          }
+          return;
+        }
+
         await runInteractiveConnect(ctx, pi);
         return;
       }
@@ -315,7 +307,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       // Default: status
       const config = resolveConfig();
       if (!config) {
-        ctx.ui.notify("[pi-cpamc] No configurado aún. Escribí /connect para conectarte.", "warning");
+        ctx.ui.notify("[pi-cpamc] No configurado aún. Escribí /cpamc connect para conectarte.", "warning");
         return;
       }
       ctx.ui.notify(
